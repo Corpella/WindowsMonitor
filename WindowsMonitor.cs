@@ -1,8 +1,18 @@
 ﻿using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using LibreHardwareMonitor.Hardware;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+[JsonSerializable(typeof(Dictionary<string, HardwareInfo.HardwareInfoObject>))]
+[JsonSerializable(typeof(HardwareInfo.HardwareInfoObject))]
+[JsonSerializable(typeof(HardwareInfo.SensorInfoObject))]
+[JsonSourceGenerationOptions(
+    WriteIndented = false,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals
+)]
+public partial class HardwareInfoJsonContext : JsonSerializerContext { }
 
 
 public static class HardwareInfo
@@ -25,9 +35,10 @@ public static class HardwareInfo
         _computer.Accept(_visitor);
     }
 
-    // FIXME: remember to remove the comment on the following line when compiling natively
-    // [UnmanagedCallersOnly(EntryPoint = "GetHardwareInfo")]
-    public static IntPtr GetHardwareInfo(IntPtr hardwareNamesPtr)
+
+    [UnmanagedCallersOnly(EntryPoint = "GetHardwareInfo")]
+    public static IntPtr GetHardwareInfo(IntPtr hardwareNamesPtr) { return GetHardwareInfoInternal(hardwareNamesPtr); }
+    public static IntPtr GetHardwareInfoInternal(IntPtr hardwareNamesPtr)
     {
         // Convert the IntPtr to an array of strings
         string[] hardwareNames = Marshal
@@ -53,7 +64,7 @@ public static class HardwareInfo
                 {
                     float SensorValue = sensor.Value != null ? (float)sensor.Value : 0;
                     SensorInfoObject sensorInfoObject =
-                        new() { Name = sensor.Name, Value = SensorValue, Type = hardwareType };
+                        new() { Name = sensor.Name, Value = SensorValue };
 
                     hardwareInfoObject.Sensors.Add(sensorInfoObject);
                 }
@@ -63,12 +74,15 @@ public static class HardwareInfo
         }
 
 
-        // Convert the result to a stringified JSON using System.Text.Json
-        string jsonResult = System.Text.Json.JsonSerializer.Serialize(result,new JsonSerializerOptions { NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals });
+        string jsonResult = JsonSerializer.Serialize(result, HardwareInfoJsonContext.Default.DictionaryStringHardwareInfoObject);
+
+
         IntPtr ptr = Marshal.StringToHGlobalAnsi(jsonResult);
 
         return ptr;
     }
+
+
 
     public class HardwareInfoObject
     {
@@ -82,10 +96,12 @@ public static class HardwareInfo
         }
     }
 
+
+
+
     public class SensorInfoObject
     {
         public string Name { get; set; }
-        public string Type { get; set; }
         public float Value { get; set; }
 
         public SensorInfoObject() { }
@@ -103,50 +119,5 @@ public static class HardwareInfo
         }
         public void VisitSensor(ISensor sensor) { }
         public void VisitParameter(IParameter parameter) { }
-    }
-}
-
-[TestClass]
-public class HardwareInfoTest
-{
-    [TestMethod]
-    public void TestGetHardwareInfo()
-    {
-        // Arrange
-        string[] hardwareNames = new string[]
-        {
-            "Cpu",
-            "NvidiaGpu",
-            "Motherboard",
-            "Memory",
-            "Psu"
-         };
-
-        IntPtr hardwareNamesPtr = Marshal.StringToHGlobalAnsi(string.Join(",", hardwareNames));
-
-        // Act
-        IntPtr resultPtr = HardwareInfo.GetHardwareInfo(hardwareNamesPtr);
-
-        // Convert the result back to a string
-        string jsonResult = Marshal.PtrToStringAnsi(resultPtr);
-
-        // Log the result
-        Console.WriteLine(jsonResult);
-
-        // Convert the JSON string to a Dictionary
-        var result = System.Text.Json.JsonSerializer.Deserialize<
-            Dictionary<string, HardwareInfo.HardwareInfoObject>
-        >(jsonResult);
-
-        // Assert
-        Assert.AreEqual(hardwareNames.Length, result.Count);
-        foreach (string hardwareName in hardwareNames)
-        {
-            Assert.IsTrue(result.ContainsKey(hardwareName));
-        }
-
-        // Clean up
-        Marshal.FreeHGlobal(hardwareNamesPtr);
-        Marshal.FreeHGlobal(resultPtr);
     }
 }
